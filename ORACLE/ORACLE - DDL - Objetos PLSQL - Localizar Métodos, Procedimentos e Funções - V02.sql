@@ -1,0 +1,132 @@
+-------------------------------------------------------------------------
+-- Rescupera dados com base na visão ALL_OBJECTS
+-------------------------------------------------------------------------
+select obj.owner,
+       obj.object_id,
+       obj.object_type,
+       obj.object_name
+  from sys.all_objects obj
+ where obj.object_name in ('AU_INTEGRACAO_EMITENTE', 'CONTROLE_CARGA_EMITENTES', 'ID_CONTROLE_EMITENTES', 'LOG_SCPC',
+                           'HS_TEMPORARIO_ALTOS_VALORES','HS_TEMPORARIO_BANRISUL','HS_TEMPORARIO_CHEQUE_LEGAL','HS_TEMPORARIO_EQUIFAX',
+                           'HS_TEMPORARIO_EQUIFAX_RENDA','HS_TEMPORARIO_INFOMARKETING','HS_TEMPORARIO_INFOMARKETING_OK','HS_TEMPORARIO_SCPC',
+                           'HS_TEMPORARIO_SCPC_ANALITICO','HS_TEMPORARIO_SCPC_PJ','HS_TEMPORARIO_SCPC_SINTESE','HS_TEMPORARIO_SERASA',
+                           'HS_TEMPORARIO_SPC_SC','HS_TEMPORARIO_SRF','HS_TEMPORARIO_TELEDOCUMENTO','HS_TEMPORARIO_USE_CHEQUE',
+                           'HS_TEMPORARIO_USE_FONE','HS_TEMPORARIO_USE_SCORE','HS_TEMPORARIO_VIVARA','HS_TEMPORARIO_XPERTRULE')
+   and obj.owner in ('EMI', 'S5B')
+ order by obj.owner,
+          obj.object_name,
+          obj.object_id;
+-------------------------------------------------------------------------
+select obj.owner,
+       obj.object_id,
+       obj.object_type,
+       obj.object_name,
+       col.column_id,
+       col.column_name,
+       col.data_type,
+       col.data_length,
+       col.data_precision,
+       col.data_scale,
+       col.nullable
+  from sys.all_objects     obj,
+       sys.all_tab_columns col
+ where col.table_name  = obj.object_name
+   and col.owner       = obj.owner
+   and obj.object_name in ('AU_INTEGRACAO_EMITENTE', 'CONTROLE_CARGA_EMITENTES', 'ID_CONTROLE_EMITENTES', 'LOG_SCPC')
+   and obj.object_type = 'TABLE'
+   and obj.owner       = 'EMI'
+ order by obj.owner,
+          obj.object_name,
+          obj.object_id,
+          col.column_id;
+-------------------------------------------------------------------------
+select obj.owner,
+       obj.object_id,
+       obj.object_type,
+       obj.object_name,
+       col.column_id,
+       col.column_name,
+       col.data_type,
+       col.data_length,
+       col.data_precision,
+       col.data_scale,
+       col.nullable
+  from sys.all_objects     obj,
+       sys.all_tab_columns col
+ where col.table_name  = obj.object_name
+   and col.owner       = obj.owner
+   and obj.object_name in ('AU_INTEGRACAO_EMITENTE', 'CONTROLE_CARGA_EMITENTES', 'ID_CONTROLE_EMITENTES', 'LOG_SCPC',
+                           'HS_TEMPORARIO_ALTOS_VALORES','HS_TEMPORARIO_BANRISUL','HS_TEMPORARIO_CHEQUE_LEGAL','HS_TEMPORARIO_EQUIFAX',
+                           'HS_TEMPORARIO_EQUIFAX_RENDA','HS_TEMPORARIO_INFOMARKETING','HS_TEMPORARIO_INFOMARKETING_OK','HS_TEMPORARIO_SCPC',
+                           'HS_TEMPORARIO_SCPC_ANALITICO','HS_TEMPORARIO_SCPC_PJ','HS_TEMPORARIO_SCPC_SINTESE','HS_TEMPORARIO_SERASA',
+                           'HS_TEMPORARIO_SPC_SC','HS_TEMPORARIO_SRF','HS_TEMPORARIO_TELEDOCUMENTO','HS_TEMPORARIO_USE_CHEQUE',
+                           'HS_TEMPORARIO_USE_FONE','HS_TEMPORARIO_USE_SCORE','HS_TEMPORARIO_VIVARA','HS_TEMPORARIO_XPERTRULE')
+   and obj.owner in ('EMI', 'S5B')
+   and obj.object_type = 'TABLE'
+ order by obj.owner,
+          obj.object_name,
+          obj.object_id,
+          col.column_id;
+-------------------------------------------------------------------------
+-- Rescupera dados com base na visão ALL_TABLES
+-------------------------------------------------------------------------
+select t.*
+  from sys.all_tables t
+ where t.table_name like 'HS_TEMPORARIO%'
+   and t.owner      = 'S5B'
+ order by t.owner,
+          t.table_name;
+-------------------------------------------------------------------------
+select tab.owner,
+       tab.table_name,
+       col.column_id,
+       col.column_name,
+       col.data_type,
+       col.data_length,
+       col.data_precision,
+       col.data_scale,
+       col.nullable
+  from sys.all_tables      tab,
+       sys.all_tab_columns col
+ where col.table_name = tab.table_name
+   and col.owner      = tab.owner
+   and tab.table_name like 'HS_TEMPORARIO%'
+   and tab.owner      = 'S5B'
+ order by tab.owner,
+          tab.table_name,
+          col.column_id;
+-------------------------------------------------------------------------
+-- Rescupera os tipos de de objetos com base na visão ALL_TABLES
+-------------------------------------------------------------------------
+select distinct 
+       obj.object_type
+  from sys.all_objects obj
+ order by obj.object_type;
+ -------------------------------------------------------------------------
+-- Rescupera objetos e argumentos/parametros com base nas visões ALL_TABLES e ALL_ARGUMENTS
+-------------------------------------------------------------------------
+select obj.owner                                                      owner,
+       obj.object_id                                                  objeto_id,
+       obj.object_type                                                objeto_tipo,
+       arg.package_name                                               objeto_nome,
+       arg.object_name                                                sub_rotina,
+       arg.sequence                                                   parametro_id,
+       decode(arg.argument_name, null, '(RESULT)', arg.argument_name) parametro_nome,
+       arg.in_out                                                     parametro_forma,
+       arg.data_type                                                  parametro_tipo,
+       arg.data_length                                                tamanho,
+       arg.data_precision                                             precisao,
+       arg.pls_type                                                   pls_type
+  from sys.all_objects   obj,
+       sys.all_arguments arg
+ where (arg.object_name = obj.object_name or arg.package_name = obj.object_name)
+   and arg.owner = obj.owner
+   and obj.object_name = 'PA_INFOMARKETING'
+--   and obj.object_name like 'PA_%'
+   and obj.owner       = 'S5B'
+ order by obj.owner,
+          obj.object_id,
+          obj.object_type,
+          arg.package_name,
+          arg.object_name,
+          arg.sequence;

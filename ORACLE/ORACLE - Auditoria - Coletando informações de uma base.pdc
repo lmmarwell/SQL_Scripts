@@ -1,0 +1,262 @@
+SET serveroutput ON SIZE 1000000 FORMAT WRAPPED
+SET autotrace    OFF
+SET feedback     OFF
+SET wrap         OFF
+SET trimspool    ON
+SET pagesize     100
+SET linesize     200
+ 
+ALTER SESSION SET NLS_DATE_FORMAT = 'DD/MM/YYYY';
+ 
+DECLARE 
+  v_media_archive   number;
+  v_spfile          varchar(10);
+  v_version         v$version.banner%TYPE;
+  v_host            v$instance.host_name%TYPE;
+  v_instance        v$instance.instance_name%TYPE;
+  v_thread          v$instance.thread#%TYPE;
+  v_startup_time    v$instance.startup_time%TYPE;
+  v_name            v$database.name%TYPE;
+  v_created         v$database.created%TYPE;
+  v_resetlogs_time  v$database.resetlogs_time%TYPE;
+  v_log_mode        v$database.log_mode%TYPE;
+  v_open_mode       v$database.open_mode%TYPE;
+BEGIN
+  SELECT DECODE(COUNT(*),0,'PFILE','SPFILE') INTO v_spfile FROM v$spparameter 
+    WHERE isspecified != 'FALSE';
+  SELECT banner INTO v_version FROM v$version  WHERE ROWNUM < 2;
+  SELECT UPPER(host_name), UPPER(instance_name), thread#, startup_time
+    INTO v_host, v_instance, v_thread, v_startup_time
+    FROM v$instance
+  ;
+  SELECT name, created, resetlogs_time, log_mode, open_mode
+    INTO v_name, v_created, v_resetlogs_time, v_log_mode, v_open_mode
+    FROM v$database
+  ;
+ 
+  dbms_output.put_line('');
+  dbms_output.put_line('Informações de ' || v_name);
+  dbms_output.put_line('========================');
+  dbms_output.put_line('');
+  dbms_output.put_line('Informações Gerais');
+  dbms_output.put_line('------------------');
+  dbms_output.put_line('Servidor..............: ' || v_host);
+  dbms_output.put_line('Versão................: ' || v_version);
+  dbms_output.put_line('Instância / Thread....: ' || v_instance || ' / ' || v_thread);
+  dbms_output.put_line('Criado em.............: ' || to_char(v_created,'DD/MM/YYYY'));
+  dbms_output.put_line('Último RESETLOG.......: ' || to_char(v_resetlogs_time,'DD/MM/YYYY'));
+  dbms_output.put_line('Última inicialização..: ' || to_char(v_startup_time,'DD/MM/YYYY'));
+  dbms_output.put_line('Inicializado com......: ' || v_spfile);
+  dbms_output.put_line('Modo ARCHIVE..........: ' || v_log_mode);
+  dbms_output.put_line('Status................: ' || v_open_mode);
+  dbms_output.put_line('');
+ 
+ 
+  dbms_output.put_line('Localização');
+  dbms_output.put_line('===========');
+  dbms_output.put_line('Parâmetro            | Valor');
+  dbms_output.put_line('---------------------|------');
+  FOR nls IN (
+    SELECT RPAD(description,20) parameter, property_value 
+      FROM database_properties
+      WHERE property_name IN ('NLS_CHARACTERSET', 'NLS_DATE_FORMAT','NLS_LANGUAGE',
+        'NLS_NUMERIC_CHARACTERS', 'NLS_TERRITORY', 'DBTIMEZONE')
+  ) LOOP
+    dbms_output.put_line(nls.parameter || ' | ' || nls.property_value);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+ 
+  dbms_output.put_line('Memória');
+  dbms_output.put_line('=======');
+  dbms_output.put_line('Parâmetro                 | Valor(MB)');
+  dbms_output.put_line('--------------------------|----------');
+  FOR mem IN (
+    SELECT RPAD(name,25) parameter, ROUND(value/1024/1024) valor_mb
+      FROM v$parameter 
+      WHERE name IN ('db_cache_size','large_pool_size','java_pool_size',
+        'sga_max_size','shared_pool_size','pga_aggregate_target')
+      ORDER BY name
+  ) LOOP
+    dbms_output.put_line(mem.parameter || ' | ' || mem.valor_mb);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+  dbms_output.put_line('REDO');
+  dbms_output.put_line('====');
+  dbms_output.put_line('Grupo | Tamanho | Arquivo');
+  dbms_output.put_line('------|---------|--------');
+  FOR log IN (
+    SELECT f.GROUP# AS grupo, ROUND(l.bytes/1024/1024) AS tamanho, f.member AS arquivo 
+      FROM v$logfile f, v$log l
+      WHERE f.GROUP# = l.group#) LOOP
+    dbms_output.put_line(lpad( log.grupo,5) || ' | ' || lpad(log.tamanho,7) || 
+      ' | ' || log.arquivo);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+ 
+  dbms_output.put_line('Control File');
+  dbms_output.put_line('============');
+  FOR control IN ( SELECT name FROM v$controlfile) LOOP
+    dbms_output.put_line(control.name);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+ 
+  IF v_log_mode = 'ARCHIVELOG' THEN
+    SELECT ROUND(SUM(blocks * block_size) / to_number( MAX(first_time) - 
+      MIN(first_time)) /1024/1024) media
+      INTO v_media_archive
+      FROM V$ARCHIVED_LOG; 
+ 
+    dbms_output.put_line('ARCHIVE');
+    dbms_output.put_line('=======');    
+    dbms_output.put_line('Quantidade média de archive gerado: ' || v_media_archive || 'MB / dia');
+    dbms_output.put_line('');    
+    dbms_output.put_line('ID | Status     | Tipo       | Destino    | Arquivo');
+    dbms_output.put_line('---|------------|------------|------------|--------');
+ 
+    FOR arch IN ( 
+      SELECT RPAD(dest_id, 2) id, RPAD(STATUS,10) STATUS, RPAD(binding,10) tipo, 
+        RPAD(target,10) destino, destination arquivo 
+        FROM v$archive_dest WHERE destination IS NOT NULL) LOOP
+      dbms_output.put_line(arch.id || ' | ' || arch.STATUS || ' | ' || arch.tipo || 
+        ' | ' || arch.destino || ' | ' || arch.arquivo);
+    END LOOP;
+    dbms_output.put_line('');
+  END IF;
+ 
+ 
+  dbms_output.put_line('Logs do grupo ADMIN');
+  dbms_output.put_line('===================');
+  dbms_output.put_line('Nome            | Diretório');
+  dbms_output.put_line('----------------|----------');
+  FOR admin IN ( 
+    SELECT RPAD(name,15) log, value 
+      FROM v$parameter  
+      WHERE name IN ('audit_file_dest', 'background_dump_dest', 'core_dump_dest', 
+        'user_dump_dest') 
+      ORDER BY NAME) LOOP
+    dbms_output.put_line(admin.log || ' | ' || admin.value);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+ 
+  dbms_output.put_line('Configurações de auditoria e segurança');
+  dbms_output.put_line('======================================');
+  dbms_output.put_line('Parâmetro       | Valor');
+  dbms_output.put_line('----------------|------');
+  FOR security IN ( 
+    SELECT RPAD(name,15) log, value 
+      FROM v$parameter  
+      WHERE name IN ('audit_trail', 'os_authent_prefix', 'remote_os_authent', 
+        'remote_login_passwordfile', 'utl_file_dir') 
+      ORDER BY NAME) LOOP
+    dbms_output.put_line(security.log || ' | ' || security.value);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+END;
+/
+ 
+SET serveroutput OFF
+SET serveroutput ON SIZE 1000000  FORMAT WRAPPED
+ 
+BEGIN
+  dbms_output.put_line('JOBs');
+  dbms_output.put_line('====');
+  dbms_output.put_line('    Nº | Esquema         | Dur.(min) | BK| Intervalo    ' || 
+    '                       | SQL');
+  dbms_output.put_line('-------|-----------------|-----------|---|--------------' || 
+    '-----------------------|----');
+  FOR job IN ( 
+    SELECT LPAD(job,6) id, RPAD(schema_user,15) esquema, RPAD(TRUNC(total_time/60),9) dur_mi, 
+      broken, RPAD(interval,35) interval, what
+      FROM dba_jobs
+      WHERE interval !='null'
+  ) LOOP
+    dbms_output.put_line(job.id || ' | ' || job.esquema || ' | ' || job.dur_mi || ' | '
+      || job.broken || ' | ' || job.interval || ' | ' || job.what);
+  END LOOP;
+  dbms_output.put_line('');
+END;
+/
+ 
+SET serveroutput OFF
+SET serveroutput ON SIZE 1000000  FORMAT WRAPPED
+ 
+BEGIN
+  dbms_output.put_line('Segmentos por esquema, tablespace e tipo');
+  dbms_output.put_line('========================================');
+  dbms_output.put_line('Esquema         | Tablespace      | Tipo de Objeto  | QT   | Tam(MB)');
+  dbms_output.put_line('----------------|-----------------|-----------------|------|--------');
+  FOR schema IN ( 
+    SELECT RPAD(owner,15) schema, RPAD(tablespace_name, 15) tablespace, RPAD(segment_type,15) type,
+      LPAD(count(*),4) qt, LPAD(ROUND(SUM(bytes)/1024/1024),6) mb FROM dba_segments 
+      WHERE OWNER NOT IN ('SYS','OUTLN','SYSTEM','WMSYS','XDB','SISMON')
+      GROUP BY owner, tablespace_name, segment_type
+      ORDER BY owner, tablespace_name, segment_type) LOOP
+    dbms_output.put_line(schema.schema || ' | ' || schema.tablespace || ' | ' 
+      || schema.type || ' | ' || schema.qt || ' | ' || schema.mb);
+  END LOOP;
+  dbms_output.put_line('');
+END;
+/
+ 
+SET serveroutput OFF
+SET serveroutput ON SIZE 1000000  FORMAT WRAPPED
+ 
+BEGIN 
+  dbms_output.put_line('Objetos inválidos por esquema e tipo');
+  dbms_output.put_line('====================================');
+  dbms_output.put_line('Esquema         | Tipo de Objeto  |  QT');
+  dbms_output.put_line('----------------|-----------------|----');
+  FOR invalid IN ( 
+    SELECT RPAD(owner,15) AS esquema, RPAD(object_type,15) tipo, LPAD(COUNT(*),4) qt
+      FROM dba_objects
+      WHERE STATUS != 'VALID'
+      GROUP BY owner, object_type) LOOP
+    dbms_output.put_line(invalid.esquema || ' | ' || invalid.tipo || ' | ' || invalid.qt);
+  END LOOP;
+  dbms_output.put_line('');
+END;
+/
+ 
+SET serveroutput OFF
+SET serveroutput ON SIZE 1000000 FORMAT WRAPPED FORMAT WRAPPED
+ 
+BEGIN
+  dbms_output.put_line('Database Links');
+  dbms_output.put_line('==============');
+  dbms_output.put_line('Esquema         | Nome            | Criacao    |' || 
+    ' Esquema remoto  | Host remoto');
+  dbms_output.put_line('----------------|-----------------|------------|' || 
+    '-----------------|------------');
+  FOR dblink IN ( 
+    SELECT RPAD(owner,15) AS esquema, RPAD(db_link,15) nome, 
+      RPAD(username,15) esquema_destino, host host_destino, to_char(created,'DD-MM-YYYY') criacao
+      FROM dba_db_links ORDER BY host, owner) LOOP
+    dbms_output.put_line(dblink.esquema || ' | ' || dblink.nome || ' | ' || 
+      dblink.criacao || ' | ' || dblink.esquema_destino || ' | ' || dblink.host_destino);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+ 
+  dbms_output.put_line('Visões Materializadas');
+  dbms_output.put_line('=====================');
+  dbms_output.put_line('Esquema         | Nome            | Q Len | Atualiz. | DBLink');
+  dbms_output.put_line('----------------|-----------------|-------|----------|-------');
+  FOR mview IN ( 
+    SELECT RPAD(owner,15) esquema, RPAD(mview_name,15) nome, RPAD(master_link,15) link, 
+      LPAD(query_len,5) len, last_refresh_date FROM dba_mviews
+  ) LOOP
+    dbms_output.put_line(mview.esquema || ' | ' || mview.nome || ' | ' || mview.len || 
+      ' | ' || mview.last_refresh_date || ' | ' || mview.link);
+  END LOOP;
+  dbms_output.put_line('');
+ 
+END;
+/
+SET feedback ON
+SET LINESIZE  120
